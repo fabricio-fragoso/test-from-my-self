@@ -12,6 +12,9 @@ from tkinter import filedialog, messagebox, ttk
 from pypdf import PdfReader
 
 
+EXPORT_FOLDER = r'C:\Users\Luxottica\Desktop\Teste de Renomear'
+
+
 def selected_period(start, end):
     start_date = datetime.strptime(start, '%d/%m/%Y').date()
     end_date = datetime.strptime(end, '%d/%m/%Y').date()
@@ -141,17 +144,13 @@ class App:
         self.end_date = DatePicker(fields)
         self.end_date.grid(row=1, column=1, pady=8, padx=(20, 0), sticky='w')
         ttk.Label(tab, text='Para um único dia, selecione a mesma data nos dois campos.').pack(anchor='w', pady=(0, 16))
-        self.extraction_folder = tk.StringVar(value='')
-        ttk.Button(tab, text='Selecionar pasta de destino', command=self.select_extraction_folder).pack(anchor='w')
+        ttk.Label(tab, text='Caixa: 01 • Formato: PDF').pack(anchor='w', pady=(0, 8))
+        self.extraction_folder = tk.StringVar(value=EXPORT_FOLDER)
+        ttk.Label(tab, text='Pasta de destino fixa:').pack(anchor='w')
         ttk.Label(tab, textvariable=self.extraction_folder, wraplength=800).pack(anchor='w', pady=8)
         ttk.Button(tab, text='Extrair', command=self.extract).pack(anchor='w', pady=8)
-        ttk.Label(tab, text='Aguardando definição do sistema de origem para habilitar a extração automática.',
+        ttk.Label(tab, text='Shop9: aguardando concluir o mapeamento da exportação para habilitar a extração automática.',
                   wraplength=800).pack(anchor='w', pady=12)
-
-    def select_extraction_folder(self):
-        folder = filedialog.askdirectory(title='Onde salvar os relatórios?')
-        if folder:
-            self.extraction_folder.set(folder)
 
     def extract(self):
         try:
@@ -160,7 +159,7 @@ class App:
             messagebox.showerror('Verifique as datas', 'Informe datas válidas em DD/MM/AAAA, com a data inicial anterior ou igual à final.')
             return
         messagebox.showinfo('Extração pendente',
-                            'O sistema de origem do relatório ainda precisa ser configurado. '
+                            'A automação do Shop9 ainda precisa ser concluída. '
                             'Nenhum relatório foi extraído ou salvo.')
 
     def select(self):

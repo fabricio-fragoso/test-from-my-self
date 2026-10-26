@@ -7,11 +7,13 @@ Após conferir a prévia, clique em **Renomear arquivos** e confirme.
 ## Aba Extração (interface inicial)
 
 A janela agora tem as abas **Renomeação** e **Extração**. Em Extração, selecione
-as datas inicial e final pelo calendário, escolha a pasta de destino e utilize
+as datas inicial e final pelo calendário e utilize
 o botão **Extrair**. Para um único dia, use a mesma data nos dois campos.
 
-A integração de extração ainda depende da identificação do sistema de origem
-e dos passos necessários para gerar o relatório. Por enquanto, o botão valida
+O destino é fixo: `C:\Users\Luxottica\Desktop\Teste de Renomear`, com Caixa `01`
+e formato PDF. O fluxo conhecido está documentado em [SHOP9.md](SHOP9.md).
+A integração depende de concluir o mapeamento e implementar a interação
+com as janelas do Shop9 no Windows. Por enquanto, o botão valida
 as datas e informa essa pendência; não gera, baixa ou salva relatórios.
 
 ## Windows: abrir com dois cliques
