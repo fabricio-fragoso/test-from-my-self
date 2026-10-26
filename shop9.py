@@ -65,18 +65,13 @@ class WindowsDriver:
     def __init__(self, stop=None):
         if os.name != 'nt':
             raise RuntimeError('A automação do Shop9 está disponível somente no Windows.')
-        import win32api
-        import win32gui
-        import win32process
-        from pywinauto import Desktop
-        from pywinauto.keyboard import send_keys
-        self.api, self.gui, self.process = win32api, win32gui, win32process
-        self.desktop, self.send_keys = Desktop(backend='win32'), send_keys
+        from windows_native import NativeWindows
+        self.native = NativeWindows()
         self.stop = stop or threading.Event()
         self.pid = None
 
     def pressed(self, key):
-        return bool(self.api.GetAsyncKeyState(key) & 0x8000)
+        return self.native.pressed(key)
 
     def check_stop(self):
         if self.stop.is_set() or self.pressed(0x1B):
@@ -89,64 +84,68 @@ class WindowsDriver:
             self.stop.wait(min(0.1, max(0, deadline - time.monotonic())))
 
     def capture(self):
-        x, y = self.api.GetCursorPos()
-        handle = self.gui.GetAncestor(self.gui.WindowFromPoint((x, y)), 2)
-        if handle != self.gui.GetForegroundWindow():
+        x, y = self.native.cursor()
+        handle = self.native.root_at(x, y)
+        if handle != self.native.foreground():
             raise ValueError('Ative a janela do Shop9 antes de marcar o clique.')
-        pid = self.process.GetWindowThreadProcessId(handle)[1]
+        pid = self.native.pid(handle)
         if pid == os.getpid() or (self.pid is not None and pid != self.pid):
             raise ValueError('Aponte para uma janela do mesmo processo do Shop9.')
-        title = self.gui.GetWindowText(handle)
+        title = self.native.title(handle)
         if not title:
             raise ValueError('Janela sem título. Não foi possível identificar o Shop9.')
-        left, top, right, bottom = self.gui.GetWindowRect(handle)
+        left, top, right, bottom = self.native.rectangle(handle)
         self.pid = pid
-        return {'title': title, 'class': self.gui.GetClassName(handle),
+        return {'title': title, 'class': self.native.window_class(handle),
                 'x': x - left, 'y': y - top, 'width': right - left, 'height': bottom - top}
 
     def locate(self, point, timeout=30):
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             self.check_stop()
-            matches = [window for window in self.desktop.windows(visible_only=True)
-                       if window.window_text() == point['title']
-                       and window.class_name() == point['class']
-                       and (self.pid is None or window.process_id() == self.pid)]
+            matches = [handle for handle in self.native.windows()
+                       if self.native.title(handle) == point['title']
+                       and self.native.window_class(handle) == point['class']
+                       and (self.pid is None or self.native.pid(handle) == self.pid)]
             if len(matches) > 1:
                 raise RuntimeError('Há mais de uma janela compatível. Deixe apenas um Shop9 aberto.')
             if matches:
-                window = matches[0]
-                if window.is_minimized():
-                    window.restore()
-                rectangle = window.rectangle()
-                if rectangle.width() != point['width'] or rectangle.height() != point['height']:
+                handle = matches[0]
+                self.native.restore(handle)
+                left, top, right, bottom = self.native.rectangle(handle)
+                if right - left != point['width'] or bottom - top != point['height']:
                     raise RuntimeError('O tamanho da janela mudou. Restaure o tamanho usado na configuração ou configure novamente.')
-                self.pid = window.process_id()
-                return window
+                self.pid = self.native.pid(handle)
+                return handle
             self.pause(0.2)
         raise RuntimeError(f'Janela não encontrada: {point["title"]}. Confira a tela atual do Shop9.')
 
     def click(self, point):
-        window = self.locate(point)
-        window.set_focus()
-        if self.gui.GetForegroundWindow() != window.handle:
+        handle = self.locate(point)
+        self.native.activate(handle)
+        self.pause(0.2)
+        if self.native.foreground() != handle:
             raise RuntimeError('Não foi possível ativar a janela do Shop9.')
         self.check_stop()
-        rectangle = window.rectangle()
-        window.click_input(coords=(rectangle.left + point['x'], rectangle.top + point['y']), absolute=True)
+        left, top, _, _ = self.native.rectangle(handle)
+        self.native.click(left + point['x'], top + point['y'])
         self.pause(0.8)
-        return window
+        return handle
 
     def fill(self, point, text):
-        window = self.click(point)
+        handle = self.click(point)
         self.check_stop()
-        if self.gui.GetForegroundWindow() != window.handle:
+        if self.native.foreground() != handle:
             raise RuntimeError('A janela ativa mudou. Extração interrompida antes de digitar.')
-        self.send_keys('^a', pause=0.05)
-        escaped = ''.join('{' + char + '}' if char in '+^%~()' else
-                          '{{}' if char == '{' else '{}}' if char == '}' else char for char in text)
-        self.send_keys(escaped, with_spaces=True, pause=0.06)
-        self.send_keys('{TAB}', pause=0.05)
+        self.native.select_all()
+        self.pause(0.05)
+        for char in text:
+            self.check_stop()
+            if self.native.foreground() != handle:
+                raise RuntimeError('A janela ativa mudou durante a digitação. Extração interrompida.')
+            self.native.type_character(char)
+            self.pause(0.06)
+        self.native.tab()
         self.pause(0.4)
 
 

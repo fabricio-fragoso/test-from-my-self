@@ -49,6 +49,9 @@ eles pertencem à nova execução. Um PDF temporário com falha fica na pasta co
 prefixo `_shop9_` para conferência. O limite por execução é 366 dias, sem nomes
 repetidos entre anos.
 
+A interação usa as APIs nativas do Windows pela biblioteca padrão do Python.
+Não depende de `pywinauto`, `pywin32` ou `win32ui`.
+
 A extração interrompe se a janela não for identificada, o tamanho mudar, a data
 do PDF divergir ou o arquivo não aparecer. Dias sem movimento e mensagens do
 Shop9 ainda precisam de validação no computador do usuário; uma mensagem
@@ -68,9 +71,15 @@ inesperada interrompe o fluxo e deve ser conferida manualmente.
 O pacote contém código Python e um iniciador para Windows; não é um executável
 independente. A janela de terminal permanece aberta durante o uso para mostrar
 eventuais erros. A interface, o iniciador e os cliques no Shop9 ainda precisam
-ser validados no Windows. Em Linux passaram nove testes de lógica com interação
-simulada, além da conferência do fluxo usando o PDF de exemplo real. Isso não
-substitui a validação da automação no Shop9.
+ser validados no Windows. Os testes de lógica usam interação simulada, além da
+conferência do fluxo usando o PDF de exemplo real. O teste de carregamento das
+APIs nativas só roda no Windows. Isso não substitui a validação no Shop9.
+
+Se uma versão anterior mostrou **DLL load failed while importing win32ui**,
+feche o aplicativo, baixe o ZIP atualizado e extraia todos os arquivos em uma
+pasta nova. Abra o novo `ABRIR.bat`: essa versão não importa mais a biblioteca
+que causava o erro. A configuração de cliques, quando existente, fica preservada
+fora da pasta do aplicativo; refaça-a se houver alteração de escala ou tamanho.
 
 ## Executar pelo terminal
 
@@ -87,7 +96,7 @@ instale também o pacote `python3-tk` se necessário.
 Para verificar a lógica de extração sem interagir com o Shop9:
 
 ```sh
-python -m unittest -v test_shop9
+python -m unittest -v test_shop9 test_windows_native
 ```
 
 Os documentos são processados localmente, sem envio para serviços externos.

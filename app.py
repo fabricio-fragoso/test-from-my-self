@@ -379,6 +379,8 @@ class App:
         self.status.set(f'{success} de {len(ready)} arquivo(s) renomeado(s). Selecione a pasta novamente para atualizar.')
 
 if __name__ == '__main__':
+    from windows_native import enable_dpi_awareness
+    enable_dpi_awareness()
     root = tk.Tk()
     app = App(root)
     root.mainloop()
