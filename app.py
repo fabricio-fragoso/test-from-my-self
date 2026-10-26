@@ -2,14 +2,18 @@
 
 import os
 import calendar
+import queue
 import re
 import threading
 from datetime import datetime
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from tkinter.scrolledtext import ScrolledText
 
 from pypdf import PdfReader
+from shop9 import (STEPS, Cancelled, WindowsDriver, extract_period,
+                   load_config, save_config)
 
 
 EXPORT_FOLDER = r'C:\Users\Luxottica\Desktop\Teste de Renomear'
@@ -80,7 +84,7 @@ class DatePicker(ttk.Frame):
         self.popup.destroy()
 
 
-def target_name(path):
+def report_date(path):
     reader = PdfReader(path)
     if not reader.pages:
         raise ValueError('PDF sem páginas.')
@@ -88,8 +92,11 @@ def target_name(path):
     dates = re.findall(r'\bData\s*:\s*(\d{2}/\d{2}/\d{4})\b', text, re.IGNORECASE)
     if len(set(dates)) != 1:
         raise ValueError('Campo Data ausente ou ambíguo; arquivo preservado.')
-    date = datetime.strptime(dates[0], '%d/%m/%Y')
-    return f'FECHAMENTO {date:%d-%m}.pdf'
+    return datetime.strptime(dates[0], '%d/%m/%Y').date()
+
+
+def target_name(path):
+    return f'FECHAMENTO {report_date(path):%d-%m}.pdf'
 
 
 def rename_safely(source, destination):
@@ -107,7 +114,13 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title('Renomear fechamentos PDF')
-        root.geometry('900x500')
+        root.geometry('940x680')
+        self.stop_extraction = threading.Event()
+        self.events = queue.Queue()
+        self.extracting = False
+        self.calibrating = False
+        root.protocol('WM_DELETE_WINDOW', self.close)
+        root.after(100, self.process_events)
         tabs = ttk.Notebook(root)
         tabs.pack(fill='both', expand=True)
         rename_tab = ttk.Frame(tabs)
@@ -148,19 +161,156 @@ class App:
         self.extraction_folder = tk.StringVar(value=EXPORT_FOLDER)
         ttk.Label(tab, text='Pasta de destino fixa:').pack(anchor='w')
         ttk.Label(tab, textvariable=self.extraction_folder, wraplength=800).pack(anchor='w', pady=8)
-        ttk.Button(tab, text='Extrair', command=self.extract).pack(anchor='w', pady=8)
-        ttk.Label(tab, text='Shop9: aguardando concluir o mapeamento da exportação para habilitar a extração automática.',
-                  wraplength=800).pack(anchor='w', pady=12)
+        toolbar = ttk.Frame(tab)
+        toolbar.pack(anchor='w', pady=8)
+        self.configure_button = ttk.Button(toolbar, text='Configurar cliques do Shop9', command=self.configure_shop9)
+        self.configure_button.pack(side='left')
+        self.extract_button = ttk.Button(toolbar, text='Extrair', command=self.extract)
+        self.extract_button.pack(side='left', padx=12)
+        self.stop_button = ttk.Button(toolbar, text='Parar', command=self.stop_extraction.set, state='disabled')
+        self.stop_button.pack(side='left')
+        ttk.Label(tab, text='Inicie com o Shop9 na tela inicial. Durante a extração, não use o mouse/teclado. ESC interrompe.',
+                  wraplength=850).pack(anchor='w', pady=8)
+        self.extraction_log = ScrolledText(tab, height=9, state='disabled', wrap='word')
+        self.extraction_log.pack(fill='both', expand=True)
+
+    def close(self):
+        self.stop_extraction.set()
+        self.root.destroy()
+
+    def process_events(self):
+        try:
+            while True:
+                kind, text = self.events.get_nowait()
+                self.extraction_log.config(state='normal')
+                self.extraction_log.insert('end', text + '\n')
+                self.extraction_log.see('end')
+                self.extraction_log.config(state='disabled')
+                if kind == 'done':
+                    self.extracting = False
+                    self.configure_button.config(state='normal')
+                    self.extract_button.config(state='normal')
+                    self.stop_button.config(state='disabled')
+        except queue.Empty:
+            pass
+        self.root.after(100, self.process_events)
+
+    def configure_shop9(self):
+        try:
+            driver = WindowsDriver()
+        except Exception as exc:
+            messagebox.showerror('Configuração do Shop9', str(exc))
+            return
+        self.calibrating = True
+        self.configure_button.config(state='disabled')
+        self.extract_button.config(state='disabled')
+        wizard = tk.Toplevel(self.root)
+        wizard.title('Configurar cliques — F8 para marcar')
+        wizard.attributes('-topmost', True)
+        wizard.geometry('620x230+30+30')
+        instruction = tk.StringVar()
+        ttk.Label(wizard, textvariable=instruction, wraplength=580, padding=12).pack(fill='x')
+        ttk.Label(wizard, text='Ative o Shop9, posicione o mouse e pressione F8 (sem clicar).\n'
+                  'Depois siga a próxima instrução. Mantenha o tamanho das janelas.', padding=12).pack(anchor='w')
+        note = tk.StringVar(value='O assistente apenas registra posições; não executa os cliques.')
+        ttk.Label(wizard, textvariable=note, wraplength=580, padding=8).pack(fill='x')
+        state = {'index': 0, 'down': False, 'points': {}}
+
+        def finish():
+            self.calibrating = False
+            self.configure_button.config(state='normal')
+            self.extract_button.config(state='normal')
+            wizard.destroy()
+
+        def advance():
+            state['index'] += 1
+            if state['index'] == len(STEPS):
+                try:
+                    save_config(state['points'])
+                except Exception as exc:
+                    messagebox.showerror('Erro ao salvar cliques', str(exc), parent=wizard)
+                else:
+                    self.events.put(('log', 'Cliques configurados. Feche a prévia e os filtros e volte à tela inicial do Shop9 antes de extrair.'))
+                finish()
+                return
+            show_step()
+
+        def skip():
+            state['points']['fechar_exportacao'] = None
+            advance()
+
+        skip_button = ttk.Button(wizard, text='Pular (exportação fecha sozinha)', command=skip)
+        skip_button.pack(side='left', padx=12)
+        ttk.Button(wizard, text='Cancelar configuração', command=finish).pack(side='right', padx=12)
+
+        def show_step():
+            key, text = STEPS[state['index']]
+            instruction.set(f'Etapa {state["index"] + 1}/{len(STEPS)}: {text}')
+            skip_button.config(state='normal' if key == 'fechar_exportacao' else 'disabled')
+
+        def poll():
+            if not wizard.winfo_exists():
+                return
+            down = driver.pressed(0x77)
+            if down and not state['down']:
+                try:
+                    point = driver.capture()
+                except Exception as exc:
+                    note.set(str(exc))
+                else:
+                    state['points'][STEPS[state['index']][0]] = point
+                    note.set('Posição registrada. Siga a instrução acima para continuar.')
+                    advance()
+            state['down'] = down
+            if wizard.winfo_exists():
+                wizard.after(100, poll)
+
+        wizard.protocol('WM_DELETE_WINDOW', finish)
+        show_step()
+        poll()
 
     def extract(self):
         try:
-            selected_period(self.start_date.value.get(), self.end_date.value.get())
+            start, end = selected_period(self.start_date.value.get(), self.end_date.value.get())
+            if (end - start).days >= 366:
+                raise ValueError('Período longo demais.')
         except ValueError:
-            messagebox.showerror('Verifique as datas', 'Informe datas válidas em DD/MM/AAAA, com a data inicial anterior ou igual à final.')
+            messagebox.showerror('Verifique as datas', 'Informe um período válido de até 366 dias em DD/MM/AAAA, com a data inicial anterior ou igual à final.')
             return
-        messagebox.showinfo('Extração pendente',
-                            'A automação do Shop9 ainda precisa ser concluída. '
-                            'Nenhum relatório foi extraído ou salvo.')
+        try:
+            config = load_config()
+        except Exception:
+            messagebox.showinfo('Configure os cliques', 'Clique em Configurar cliques do Shop9 antes de extrair.')
+            return
+        if os.name != 'nt':
+            messagebox.showerror('Windows necessário', 'Execute a extração no Windows com o Shop9 aberto.')
+            return
+        if not messagebox.askokcancel('Iniciar extração',
+                                     'Deixe o Shop9 na tela INICIAL e com o formato de exportação PDF.\n'
+                                     'Use os mesmos tamanhos de janela da configuração.\n'
+                                     'O app vai controlar o mouse e o teclado. ESC interrompe.\n'
+                                     'Arquivos existentes serão preservados. Deseja iniciar?'):
+            return
+        self.extracting = True
+        self.stop_extraction.clear()
+        self.configure_button.config(state='disabled')
+        self.extract_button.config(state='disabled')
+        self.stop_button.config(state='normal')
+
+        def worker():
+            try:
+                driver = WindowsDriver(self.stop_extraction)
+                count, skipped = extract_period(start, end, EXPORT_FOLDER, config['points'], driver,
+                                                report_date, rename_safely,
+                                                lambda text: self.events.put(('log', text)))
+                outcome = f'Concluído: {count} PDF(s) salvo(s); {skipped} arquivo(s) existente(s) preservado(s).'
+            except Cancelled as exc:
+                outcome = str(exc)
+            except Exception as exc:
+                outcome = f'Extração interrompida: {exc}\nConfira o Shop9 antes de reiniciar pela tela inicial.'
+            self.events.put(('done', outcome))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     def select(self):
         folder = filedialog.askdirectory(title='Selecione a pasta dos PDFs')

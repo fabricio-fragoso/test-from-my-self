@@ -17,7 +17,7 @@ python -m venv .venv
 if errorlevel 1 goto erro
 
 :dependencias
-".venv\Scripts\python.exe" -c "import pypdf; assert pypdf.__version__ == '6.10.0'" >nul 2>&1
+".venv\Scripts\python.exe" -c "import pypdf, pywinauto; assert pypdf.__version__ == '6.10.0'; assert pywinauto.__version__ == '0.6.9'" >nul 2>&1
 if not errorlevel 1 goto abrir
 echo Instalando dependencia. Aguarde... E necessario acesso a internet.
 ".venv\Scripts\python.exe" -m pip install --disable-pip-version-check -r requirements.txt
