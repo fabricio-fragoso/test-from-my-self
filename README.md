@@ -4,6 +4,16 @@ Aplicativo desktop em Python que seleciona uma pasta, lê o campo `Data: DD/MM/A
 na primeira página de cada PDF e apresenta uma prévia de `FECHAMENTO DD-MM.pdf`.
 Após conferir a prévia, clique em **Renomear arquivos** e confirme.
 
+## Aba Extração (interface inicial)
+
+A janela agora tem as abas **Renomeação** e **Extração**. Em Extração, selecione
+as datas inicial e final pelo calendário, escolha a pasta de destino e utilize
+o botão **Extrair**. Para um único dia, use a mesma data nos dois campos.
+
+A integração de extração ainda depende da identificação do sistema de origem
+e dos passos necessários para gerar o relatório. Por enquanto, o botão valida
+as datas e informa essa pendência; não gera, baixa ou salva relatórios.
+
 ## Windows: abrir com dois cliques
 
 1. Instale [Python 3.10 ou superior](https://www.python.org/downloads/windows/),
